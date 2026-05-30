@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "preset-ja-technical-writing": true,
+    "preset-ja-spacing": true
+  },
+  "filters": {},
+  "rulesConfig": {
+    "preset-ja-technical-writing": {
+      "max-line-length": 120
+    }
+  }
+}
