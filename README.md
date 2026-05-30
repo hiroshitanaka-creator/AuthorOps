@@ -8,9 +8,30 @@ GitHubの開発ベストプラクティスを「執筆」にそのまま持ち�
 
 ---
 
-## 📁 理想的なリポジトリ構成
+## 📝 メモの使い方（アイデアを逃さない機構）
 
-原稿自体はMarkdown（.md）で章ごとに分割し、設定ファイルや自動化スクリプトをルートに配置する構成がスマートです。
+AuthorOpsでは、「思い付きを逃さない」ことを最優先に考えています。
+
+### 基本方針
+
+| アイデアの状態 | 使う場所 | 方法 |
+|------------------------|------------------|--------|
+| 軽い思い付き・断片 | `notes/ideas-index.md` | このファイルに直接追加 |
+| もう少し掘り下げたい | Issue (`idea` テンプレート) | 新規Issue作成時に `idea.md` テンプレートを選択 |
+| 実際に章として書く準備 | Issue (`chapter-draft` テンプレート) | `chapter-draft.md` テンプレートを使ってIssue作成 |
+
+### メモの流れ例
+
+1. 「この概念、後で使えそう」と思った
+   → `notes/ideas-index.md` の「未分類の生アイデア」セクションに追加
+2. そのアイデアをもう少し考えたい
+   → `idea.md` テンプレートでIssueを作成
+3. いざ章として書く準備ができた
+   → `chapter-draft.md` テンプレートでIssueを作成し、進损管理を始める
+
+---
+
+## 📁 理想的なリポジトリ構成
 
 ```text
 AuthorOps/
@@ -21,13 +42,16 @@ AuthorOps/
 ├── src/                     # 原稿の本体
 │   ├── SUMMARY.md           # 目次・全体の構成定義
 │   ├── chapter-01/          # 章ごとのディレクトリ
-│   │   ├── 01-intro.md
-│   │   └── 02-concept.md
 │   └── assets/              # 挿絵や図表、データファイル
+├── notes/                   # 生アイデア・思考の受け皿
+│   └── ideas-index.md
+├── .github/ISSUE_TEMPLATE/  # Issueテンプレート
+│   ├── idea.md
+│   └── chapter-draft.md
 ├── textlintrc.json          # 校正ルールの設定
 ├── book.toml                # mdBook等のビルド設定
 ├── Makefile                 # ローカルビルド用コマンド集
-└── README.md                # この本（論文）の概要、アブストラクト、進损状況
+└── README.md
 ```
 
 ---
@@ -48,7 +72,7 @@ AuthorOps/
 
 ここがGitHubを使う最大の強みです。
 
-- **校正の自動化（textlint）**: GitHub Actionsを組み込み、pushするたびに「ら括き言葉」「重複表現」「表記掺れ」を自動チェックさせます。エラーがあればPRにバッジがつきます。
+- **校正の自動化（textlint）**: GitHub Actionsを組ほみ、pushするたびに「ら括き言葉」「重複表現」「表記掺れ」を自動チェックさせます。エラーがあればPRにバッジがつきます。
 - **自動製本・プレビュー**: 静的サイトジェネレーター（**mdBook** や **HonKit**）を連携させ、pushと同時に美しいWebサイト（GitBook風）やPDFを自動生成し、GitHub Pagesに公開または限定公開します。常に「完成形の見た目」を確認しながら執筆できます。
 
 ---
@@ -70,12 +94,14 @@ AuthorOps/
 - `README.md` ← 現在のこのページ
 - `.github/workflows/` ディレクトリ
 - `src/` ディレクトリと章ダミーファイル
+- `notes/` ディレクトリとアイデア受け皿
+- Issueテンプレート（`idea.md`, `chapter-draft.md`）
 - 設定ファイル類（textlintrc.json, book.toml, Makefile）
 
 ### 次のステップですぐにできること
 
-1. **実際の論文/本の原稿を追加** → `src/chapter-XX/` 以下に .md ファイルを作成
-2. **GitHub Projectsを作成** → 進损管理カンバンを構築
+1. **GitHub Projectsを作成** → 進损管理カンバンを構築
+2. **実際の論文/本の原稿を追加** → `src/chapter-XX/` 以下に .md ファイルを作成
 3. **textlintの詳細設定** → `textlintrc.json` を自分の執筆スタイルに調整
 4. **GitHub Actionsの実装** → `lint.yml` / `deploy.yml` を完成させて自動化を動かす
 5. **mdBook / HonKitの設定** → `book.toml` を調整してWebプレビュー環境を構築
