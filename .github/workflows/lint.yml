@@ -1,0 +1,27 @@
+name: Lint with textlint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: Install textlint
+      run: |
+        npm install -g textlint
+        npm install -g textlint-rule-preset-ja-technical-writing
+        npm install -g textlint-rule-preset-ja-spacing
+        
+    - name: Run textlint
+      run: textlint "src/**/*.md" --format stylish
