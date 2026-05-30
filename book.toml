@@ -1,0 +1,12 @@
+[book]
+authors = ["Hiroshi Tanaka"]
+language = "ja"
+multilingual = false
+title = "AuthorOps - GitHubを最強の執筆環境にする方法"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "ayu"
+
+[output.pdf]
+optional = true
