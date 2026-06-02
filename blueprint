@@ -1,0 +1,246 @@
+# AuthorOps 拡張ブループリント
+
+### 「執筆を開発にする」から「論証を型として扱い、論理の破綻をCIで弾く」へ
+
+最終更新: 2026-06-02
+対象実装者: Grok（コーディング担当）
+設計方針: 各Phaseは **単体で価値が出る** かつ **前のPhaseに乗る**。
+言語: Python（CI/解析層）+ 既存のNode/textlint資産は壊さず併存。
+
+-----
+
+## 全体アーキテクチャ（先に地図を）
+
+```
+原稿 (src/**/*.md)
+   │
+   │ ① パース層      ── argdoc-parser ──→  論証ノードの中間表現 (AIR: Argument Intermediate Representation)
+   │                                          { claims, premises, refutations, citations, refs }
+   │
+   ├─ ② 構造diff層   ── air-diff ──────→  PRに「論証構造の変化」をコメント
+   │
+   ├─ ③ 論理検査層   ── logic-linter ──→  未定義概念 / 矛盾 / 無引用断定 を検出しPRアノテーション
+   │
+   ├─ ④ 認知境界層   ── HROScript連携 ──→  human-only / ai-assisted ブランチ分離
+   │
+   └─ ⑤ メタ生成層   ── thought-log ───→  コミット履歴から「思考の変遷」メタ文書を生成
+```
+
+中核データ構造は **AIR (Argument Intermediate Representation)**。
+全Phaseがこれを介して疎結合になるよう設計する。これが崩れると後続が全部崩れるので、Phase 1の設計だけは時間をかける。
+
+-----
+
+## Phase 0: 足場（既存READMEのPhase 0は完了済みなので差分のみ）
+
+**目的**: Python解析層を載せる土台。
+
+- `pyproject.toml` 追加（既存 package.json と併存。Pythonツール群は `tools/` 配下）
+- ディレクトリ:
+  
+  ```
+  tools/
+    authorops/
+      __init__.py
+      air/            # 中間表現の定義とパーサ
+      diff/
+      lint/
+      thoughtlog/
+    tests/
+  ```
+- 依存: `markdown-it-py`（MD解析）, `pydantic`（AIRスキーマ）, `pytest`
+- CI: `.github/workflows/python-check.yml` を追加（pytest + ruff）
+
+> **Grokへの指示**
+> 「`tools/authorops/` にPythonパッケージを作成。pyproject.tomlで markdown-it-py, pydantic, pytest, ruff を依存に。GitHub Actionsで python-check.yml を追加し、push/PRで pytest と ruff を実行。既存の package.json / textlint 環境は一切変更しないこと。」
+
+**完了条件**: 空のテストがCIで緑になる。
+
+-----
+
+## Phase 1: AIR — 論証中間表現とパーサ（最重要・ここが土台）
+
+**目的**: 原稿Markdownを「論証ノードの集合」に変換する。
+ここが全ての基盤。**markdownを壊さず、注釈で論証構造を付与する方式**にする（HTMLコメント or 軽量ディレクティブ）。
+
+### 1-1. 記法の決定（先に仕様を固める）
+
+原稿側にこう書ける記法を定義する（案。Grokに丸投げせず、ここはあなたが決める）:
+
+```markdown
+<!-- @claim id=c1 -->
+意味の生成には責任が伴う。
+<!-- @premise for=c1 ref=watsuji1934 -->
+人間存在は間柄において成立するため、孤立した主体は意味を生成しない。
+<!-- @refutation against=c1 -->
+ただし機械的生成系は間柄を持たずとも出力を行う。
+```
+
+ポイント:
+
+- `claim` / `premise` / `refutation` / `definition` / `citation` の5種
+- `id` で参照、`for` / `against` / `ref` で関係を張る
+- 注釈が無い段落は「自由文（free）」として扱い、検査対象外にできる（移行コストを下げる）
+
+### 1-2. AIRスキーマ（pydantic）
+
+```python
+class Node(BaseModel):
+    id: str
+    kind: Literal["claim","premise","refutation","definition","citation","free"]
+    text: str
+    refs: list[str] = []        # 参照する他ノードid or 文献キー
+    relation: dict = {}         # {"for": "c1"} など
+    source: dict                # {"file": "...", "line": 12}
+
+class AIR(BaseModel):
+    nodes: list[Node]
+    edges: list[tuple[str,str,str]]  # (from, to, relation_type)
+```
+
+### 1-3. パーサ
+
+`src/**/*.md` を走査 → AIRオブジェクト → `air.json` を出力。
+
+> **Grokへの指示**
+> 「上記の注釈記法（@claim等のHTMLコメント）でマークされたMarkdownをパースし、pydanticのAIRモデルに変換するパーサを `tools/authorops/air/parser.py` に実装。出力は air.json。注釈が無い段落は kind=‘free’ とする。エッジは relation（for/against/ref）から構築。テストを `tools/tests/test_parser.py` に書き、サンプル原稿 `tools/tests/fixtures/sample.md` で claim/premise/refutation/edges が正しく抽出されることを検証。」
+
+**完了条件**: サンプル原稿から正しいair.jsonが生成され、テストが緑。
+
+-----
+
+## Phase 2: 論証構造diff（最初の「見える成果」）
+
+**目的**: PRで「文字列がどう変わったか」ではなく「どの主張が消え/前提が増えたか」を見せる。
+
+### 2-1. diffロジック
+
+- base branch の air.json と head の air.json を比較
+- 出力: `added_claims`, `removed_claims`, `added_premises`, `weakened`（前提が減ったclaim）, `new_refutations`
+- ノードidベースで突合。idが変わったものは text類似度（簡易でよい）でマッチ試行。
+
+### 2-2. PRコメント出力
+
+GitHub Actionsで、PR時に上記サマリをMarkdownテーブルでコメント投稿。
+
+```
+## 🧩 論証構造の変化
+| 種別 | 内容 |
+|---|---|
+| ➕ 追加された主張 | c7: 「自由は圧力の関数である」 |
+| ➖ 削除された主張 | c3 |
+| ⚠️ 前提が減った主張 | c1（premise 2→1） |
+| 🔁 新しい反証 | against c5 |
+```
+
+> **Grokへの指示**
+> 「2つのair.json（base/head）を比較し、追加/削除されたclaim・premise・refutation、および前提が減って弱体化したclaimを検出する `tools/authorops/diff/air_diff.py` を実装。ノードはidで突合、id不一致時はtext類似度（difflibで可）でフォールバック。結果をMarkdownテーブルにフォーマットする関数も用意。`.github/workflows/air-diff.yml` でPR時にbaseとheadのair.jsonを生成・比較し、actions/github-script等でPRにコメント投稿。テストで diff ロジックを検証。」
+
+**完了条件**: テストPRを立てると、構造変化コメントが自動で付く。
+
+-----
+
+## Phase 3: 論理リンター（商業価値が出る層）
+
+**目的**: textlintの上に「論理の穴」検査を足す。**まずルールベース、その後LLM**の2段構え。
+
+### 3-1. ルールベース検査（LLM不要・決定論的・CIで安定）
+
+AIRを舐めて以下を検出:
+
+1. **未定義概念**: `definition` が無いまま `claim`/`premise` 内で繰り返し使われる固有概念（用語リストと突合）
+1. **無引用断定**: `claim` に `for` premise も `ref` 文献も無い「裸の強い断定」
+1. **孤立反証**: `against` 先のclaimが存在しない refutation
+1. **循環参照**: premise→claim→premiseの論理ループ
+
+これらはLLM無しで実装でき、CIで毎回安定して動く。**ここまでで実用ツールとして完成**。
+
+### 3-2. LLM検査層（オプショナル・後付け）
+
+- ローカルLLM or API を `tools/authorops/lint/llm_check.py` に分離（差し替え可能なadapterパターン）
+- 検査内容: 「前章と矛盾する主張」「論理の飛躍」
+- **CIではデフォルトoff**（コスト/再現性のため）。`make lint:logic:llm` で手動実行。
+- 出力はあくまで「指摘（warning）」で、CIを赤にはしない（人間が判断する設計）
+
+> **Grokへの指示**
+> 「air.jsonを入力に、(1)未定義概念 (2)無引用の裸の断定 (3)参照先が存在しない孤立反証 (4)循環参照 を検出するルールベースリンターを `tools/authorops/lint/rules.py` に実装。各指摘は {rule, node_id, message, severity, source} の形。LLM検査は `tools/authorops/lint/llm_check.py` にadapterインターフェース（generate(prompt)->str）で分離し、実装は環境変数でモデルを切替可能に。CIワークフロー lint-logic.yml ではルールベースのみ実行しPRアノテーション（warning）を付ける。LLM検査はCIでは実行しない。テストはルールベース4種それぞれの陽性・陰性ケースを用意。」
+
+**完了条件**: わざと穴のある原稿を入れると、4種の指摘が正しく出る。LLM層は差し替え可能な形で存在する。
+
+-----
+
+## Phase 4: 認知境界ブランチ戦略（HROScript連携・哲学の実装）
+
+**目的**: 「どこまでが人間の認知の核か」をリポジトリ構造に刻む。
+
+### 4-1. ブランチ/ディレクトリ規約
+
+- `src/human-only/`: HROScriptで機械可読性を意図的に下げた領域。LLM検査・自動整形を**かけない**（CIで除外）
+- `src/ai-assisted/`: 正規化済み。全検査対象
+- マージ時、human-only → ai-assisted への「翻訳PR」を明示的に作る運用
+
+### 4-2. 実装
+
+- `.authorops.toml` に検査対象/除外パスを定義
+- HROScript変換を呼ぶフック（既存HROScript資産をサブコマンド化）
+- human-only領域に対する検査は全てskipされることをCIで保証
+
+> **Grokへの指示**
+> 「`.authorops.toml` で include/exclude パスを設定可能にし、全ツール（parser/diff/lint）がこの設定を尊重するよう共通ローダ `tools/authorops/config.py` を作る。src/human-only/ 配下はlint・自動整形の対象外とする。既存のHROScript変換スクリプトを `authorops hro` サブコマンドとして呼び出せるCLIエントリを用意（実装本体は既存資産を import）。CIで human-only 配下にlintが走らないことをテストで保証。」
+
+**完了条件**: human-only配下を編集してもLLM/整形が走らず、ai-assisted配下では全検査が走る。
+
+-----
+
+## Phase 5: 思考ログ・メタ文書生成（研究データ化）
+
+**目的**: 完成後に「この論文がどう生成されたか」を自動で1本のメタ文書にする。
+
+### 5-1. 入力
+
+- セマンティックコミット履歴（`feat(ch2):` 等）
+- 各時点のair.jsonスナップショット（タグ or 主要コミットごと）
+
+### 5-2. 出力
+
+- `docs/genesis.md`: 「論証構造の時系列変遷」
+  - いつどの主張が生まれ、どの反証で修正され、どの前提が補強されたか
+  - claim数 / refutation数の推移グラフ（mermaid or 静的画像）
+- Po_coreの三層メモリへエクスポートできるJSON形式も併せて出力（将来連携用フック）
+
+> **Grokへの指示**
+> 「gitログ（Conventional Commits形式）と、主要コミット時点のair.jsonを入力に、論証構造の時系列変遷をまとめた docs/genesis.md を生成する `tools/authorops/thoughtlog/genesis.py` を実装。claim/refutation数の推移はmermaid gantt風 or 折れ線で表現。あわせて機械可読な genesis.json（各時点のノード数・主要イベント）も出力。Po_core連携は今は行わず、エクスポート用JSONスキーマだけ定義しておく。テストはダミーのコミット列とair列で genesis が生成されることを確認。」
+
+**完了条件**: `make genesis` で、執筆過程のメタ文書が生成される。
+
+-----
+
+## 実装順序の理由（依存関係）
+
+```
+Phase 0 ─→ Phase 1 (AIR) ─┬─→ Phase 2 (diff)
+                          ├─→ Phase 3 (lint)
+                          ├─→ Phase 4 (境界) … config共通化のため2,3の後が楽
+                          └─→ Phase 5 (genesis) … 1のair.jsonスナップショットに依存
+```
+
+- **Phase 1が全ての親**。ここの記法とスキーマがブレると全部やり直しになる。Grokに投げる前に記法だけは自分で確定させること。
+- Phase 2と3は独立。**先にやりたい方からでよい**。「見せ場」が欲しいなら2、「実用」が欲しいなら3。
+- Phase 4は2,3が動いてから（configを共通化するタイミングが自然）。
+- Phase 5は最後。
+
+-----
+
+## Grokに渡すときの運用Tips
+
+1. **1 Phase = 1 PR** にさせる。まとめてやらせると検証不能になる。
+1. 各PRで「テストが緑」を完了条件として明示。Grokはテストを書かずに進みがちなので毎回釘を刺す。
+1. Phase 1のAIRスキーマだけは、Grokの初稿をあなたがレビューして確定してから2以降に進む。ここが崩れると全崩れ。
+1. LLM検査（Phase 3-2）は最後の最後。先に決定論的な部分を固めると、Grokの出力の検証が楽になる。
+1. コミットはセマンティックコミット強制（Phase 5の入力品質に直結する）。
+
+-----
+
+## 最初のひと言（Grokへの初回プロンプト案）
+
+> 「AuthorOpsというMarkdown執筆リポジトリに、論証構造を解析する層を追加したい。まずPhase 0として、tools/authorops/ にPythonパッケージの足場を作ってほしい。pyproject.tomlで markdown-it-py / pydantic / pytest / ruff を依存にし、GitHub Actions（python-check.yml）でpushとPR時にpytestとruffを走らせる。既存のpackage.jsonとtextlint環境は変更しないこと。空のパッケージとダミーテスト1本を含め、CIが緑になる状態をPRで出して。」
