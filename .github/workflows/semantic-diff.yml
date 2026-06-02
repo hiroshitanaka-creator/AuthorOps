@@ -1,0 +1,58 @@
+name: Semantic Diff — 論旨の移動を読む
+
+# 章を変更するPRに対し、論旨・主張・根拠レベルの差分を
+# LLM(なければヒューリスティック)で抽出し、PRコメントに投稿する（Phase C-1）。
+
+on:
+  pull_request:
+    paths:
+      - "src/**/*.md"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  semantic-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Analyze argument-level changes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/semantic_diff.py \
+            --base "origin/${{ github.base_ref }}" \
+            --head "HEAD" \
+            --src src \
+            --out semantic_diff.md
+
+      - name: Post / update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('semantic_diff.md', 'utf8');
+            const marker = '<!-- authorops:semantic-diff -->';
+            const full = marker + '\n' + body;
+            const {data: comments} = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body: full });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body: full });
+            }
