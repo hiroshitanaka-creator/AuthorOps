@@ -38,7 +38,14 @@ AuthorOps/
 ├── .github/
 │   └── workflows/
 │       ├── lint.yml         # 文章校正（textlint）の自動化
-│       └── deploy.yml       # PDF/HTML自動ビルド＆GitHub Pages）
+│       ├── deploy.yml       # PDF/HTML自動ビルド＆GitHub Pages
+│       ├── strata.yml       # 思考の地層を構築・公開（Phase A+B）
+│       └── semantic-diff.yml # PRで論旨の変化を自動コメント（Phase C）
+├── scripts/
+│   ├── build_strata.py      # Phase A: git履歴 → 段落地層JSON
+│   └── semantic_diff.py     # Phase C: 論旨・根拠レベルの意味論diff
+├── viewer/
+│   └── strata.html          # Phase B: D3地層ビューア（GitHub Pages）
 ├── src/                     # 原稿の本体
 │   ├── SUMMARY.md           # 目次・全体の構成定義
 │   ├── chapter-01/          # 章ごとのディレクトリ
@@ -77,6 +84,47 @@ AuthorOps/
 
 ---
 
+## 🪨 Strata（思考の地層）— 考えの堆積を可視化する
+
+AuthorOpsの核心は「書くこと」だけではない。**「考えがどう変わり、堆積していったか」**を記録・可視化できることにある。
+
+Strataは3層の仕組みで、執筆の履歴を「地質」として扱う。
+
+### Layer A（Phase A）: 機械的構造化
+`scripts/build_strata.py` が git 履歴を解析し、章・段落単位で
+- いつ生まれたか（born_at）
+- 何回書き直されたか（revisions）
+- どれだけ揺れ動いたか（churn）
+を `data/strata.json` に構造化する。
+
+段落に `<!-- para:id=xxx -->` を付けると、改稿で文言が変わっても同一段落として追跡できる。
+
+### Layer B（Phase B）: 視覚化
+`viewer/strata.html`（D3.js）が地層断面図を描く。
+- 横幅 = 改稿回数（厚いほどよく揺れた）
+- 色 = 誕生時期（深層＝古い、表層＝新しい）
+- 伏線（`<!-- foreshadow:id=xxx -->` / `<!-- payoff:id=xxx -->`）を「地下水脈」として可視化
+
+GitHub Pages で自動公開される。
+
+### Layer C（Phase C）: 意味論解析
+PRで章を変更したとき、`scripts/semantic_diff.py` が
+「文字の差分」ではなく「主張・根拠・前提がどう動いたか」を抽出する。
+
+- ANTHROPIC_API_KEY があれば Claude で高精度解析
+- 無ければヒューリスティックで概算（CIは落ちない）
+- 結果はPRコメントに自動投稿（sticky）
+
+### なぜこれが重要か
+
+- 思考の履歴が残る（メタ認知支援）
+- 長い執筆プロジェクトで「伏線を忘れる」ことを防ぐ
+- 改稿の「質」を可視化できる（ただの文字数増加ではなく、論理の深化）
+
+詳しくは [`docs/strata-system.md`](docs/strata-system.md) を参照。
+
+---
+
 ## 🔬 更に尖らせるためのアイデア
 
 - **Gitのコミットメッセージを思考のログにする**:
@@ -95,8 +143,9 @@ AuthorOps/
 - `lint.yml` 改善（npm ci + cache + timeout）
 - `deploy.yml` 改善（PRトリガー追加、安定化）
 - `dependabot.yml` 追加（依存自動更新）
-- Issueテンプレート完備
-- サンプル章とSUMMARY.md
+- `SECURITY.md` / `CONTRIBUTING.md` / `PULL_REQUEST_TEMPLATE.md` 追加
+- `docs/REVIEW_GUIDELINES.md` 作成
+- Strataシステム（思考の地層）基盤追加（Phase A/B/C）
 
 ### 次のステップ（優先順位順）
 
