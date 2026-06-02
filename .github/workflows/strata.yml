@@ -1,0 +1,58 @@
+name: Strata — 地層を掘る
+
+# 原稿(main)が更新されるたびに git 履歴を構造化し、
+# 地層ビューアを GitHub Pages へ公開する（Phase A + B）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**/*.md"
+      - "scripts/build_strata.py"
+      - "viewer/**"
+      - ".github/workflows/strata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 全履歴が必要（地層の堆積を遡るため）
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build strata.json
+        run: python scripts/build_strata.py --src src --out data/strata.json
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/data
+          cp viewer/strata.html _site/index.html
+          cp data/strata.json   _site/data/strata.json
+          sed -i 's#\.\./data/strata.json#data/strata.json#' _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
