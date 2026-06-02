@@ -6,7 +6,9 @@
   "filters": {},
   "rulesConfig": {
     "preset-ja-technical-writing": {
-      "max-line-length": 120
+      "max-line-length": 100,
+      "no-mix-dearu-desumasu": true,
+      "ja-no-redundant-expression": true
     }
   }
 }
