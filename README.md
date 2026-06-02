@@ -87,24 +87,24 @@ AuthorOps/
 
 ---
 
-## 🚠 現在のセットアップ状況
+## 🚠 現在のセットアップ状況（2026-06-02 更新）
 
-このリポジトリは以下のスケルトンを作成済みです。
+**Phase 0 完了**：基盤ファイルとCI/CDの初期改善が完了
 
-- `README.md` ← 現在のこのページ
-- `.github/workflows/` ディレクトリ
-- `src/` ディレクトリと章ダミーファイル
-- `notes/` ディレクトリとアイデア受け皿
-- Issueテンプレート（`idea.md`, `chapter-draft.md`）
-- 設定ファイル類（textlintrc.json, book.toml, Makefile）
+- `.gitignore`, `LICENSE` (MIT), `package.json` 追加
+- `lint.yml` 改善（npm ci + cache + timeout）
+- `deploy.yml` 改善（PRトリガー追加、安定化）
+- `dependabot.yml` 追加（依存自動更新）
+- Issueテンプレート完備
+- サンプル章とSUMMARY.md
 
-### 次のステップですぐにできること
+### 次のステップ（優先順位順）
 
-1. **GitHub Projectsを作成** → 進损管理カンバンを構築
-2. **実際の論文/本の原稿を追加** → `src/chapter-XX/` 以下に .md ファイルを作成
-3. **textlintの詳細設定** → `textlintrc.json` を自分の執筆スタイルに調整
-4. **GitHub Actionsの実装** → `lint.yml` / `deploy.yml` を完成させて自動化を動かす
-5. **mdBook / HonKitの設定** → `book.toml` を調整してWebプレビュー環境を構築
+1. **GitHub Projects カンバン作成**（最優先・手動で5分）
+2. **第1章のドラフト執筆**（Issue #2 参照）
+3. **textlintルールの微調整**
+4. **mdBook設定の洗練とGitHub Pages確認**
+5. **実際の長文コンテンツ追加と運用テスト**
 
 ---
 
@@ -116,10 +116,12 @@ make build
 
 # 校正のチェック
 make lint
+# 自動修正
+make lint:fix
 ```
 
 ---
 
-**Private Repository** — このリポジトリは非公開で作成されています。Grokとの作業は完全に可能です（ツールがあなたのトークンを使って操作します）。
+**Public Repository** — このリポジトリは公開されており、Grokと共同で積極的に開発中です。誰でもIssue/PRで貢献可能！
 
-作成日: 2026-05-30
+作成日: 2026-05-30 | 最終更新: 2026-06-02
