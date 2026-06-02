@@ -2,6 +2,10 @@
 /book
 /docs
 
+data/
+__pycache__/
+*.pyc
+
 # Dependencies
 /node_modules
 
