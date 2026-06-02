@@ -1,7 +1,7 @@
 {
   "name": "authorops",
   "version": "0.1.0",
-  "description": "GitHubを執筆の最強運用基盤にするためのテンプレート",
+  "description": "GitHubを執筆の最強運用基盤にするテンプレート",
   "scripts": {
     "lint": "textlint \"src/**/*.md\"",
     "lint:fix": "textlint --fix \"src/**/*.md\"",
