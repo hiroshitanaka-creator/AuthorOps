@@ -30,6 +30,11 @@ jobs:
         with:
           fetch-depth: 0          # 全履歴が必要（地層の堆積を遡るため）
 
+      - name: Ensure output directories exist
+        run: |
+          mkdir -p data
+          mkdir -p _site/data
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -39,7 +44,6 @@ jobs:
 
       - name: Assemble site
         run: |
-          mkdir -p _site/data
           cp viewer/strata.html _site/index.html
           cp data/strata.json   _site/data/strata.json
           sed -i 's#\.\./data/strata.json#data/strata.json#' _site/index.html
