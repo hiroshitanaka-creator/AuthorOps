@@ -9,7 +9,7 @@
     "serve": "mdbook serve"
   },
   "devDependencies": {
-    "textlint": "^14.0.0",
+    "textlint": "^15.7.1",
     "textlint-rule-preset-ja-technical-writing": "^10.0.0",
     "textlint-rule-preset-ja-spacing": "^2.3.0"
   }
