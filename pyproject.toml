@@ -1,0 +1,27 @@
+[project]
+name = "authorops-tools"
+version = "0.1.0"
+description = "AuthorOps Python tools for argument analysis (AIR, diff, lint, etc.)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "markdown-it-py>=3.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tools/tests"]
+python_files = "test_*.py"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
