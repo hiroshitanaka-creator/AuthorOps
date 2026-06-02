@@ -1,0 +1,16 @@
+{
+  "name": "authorops",
+  "version": "0.1.0",
+  "description": "GitHubを執筆の最強運用基盤にするためのテンプレート",
+  "scripts": {
+    "lint": "textlint \"src/**/*.md\"",
+    "lint:fix": "textlint --fix \"src/**/*.md\"",
+    "build": "mdbook build",
+    "serve": "mdbook serve"
+  },
+  "devDependencies": {
+    "textlint": "^14.0.0",
+    "textlint-rule-preset-ja-technical-writing": "^10.0.0",
+    "textlint-rule-preset-ja-spacing": "^2.3.0"
+  }
+}
