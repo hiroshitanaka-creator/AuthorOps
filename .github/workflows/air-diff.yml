@@ -1,0 +1,97 @@
+name: AIR Diff — 論証構造の変化をPRにコメント
+
+on:
+  pull_request:
+    paths:
+      - "src/**/*.md"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  air-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pydantic>=2.0 markdown-it-py>=3.0
+
+      - name: Run AIR diff
+        run: |
+          python -c "
+          import sys, json
+          from pathlib import Path
+          sys.path.insert(0, '.')
+          import subprocess
+
+          base_ref = 'origin/${{ github.base_ref }}'
+          src = 'src'
+
+          # 変更されたMarkdownファイルを取得
+          result = subprocess.run(
+            ['git', 'diff', '--name-only', base_ref, 'HEAD', '--', src],
+            capture_output=True, text=True
+          )
+          changed = [f for f in result.stdout.strip().split('\n') if f.endswith('.md')]
+
+          if not changed:
+            Path('air_diff.md').write_text('論証構造に影響するMarkdownの変更はありませんでした。')
+            sys.exit(0)
+
+          from tools.authorops.air.parser import parse_markdown_to_air
+          from tools.authorops.diff.air_diff import diff_air, format_diff_as_markdown
+          import tempfile
+
+          sections = ['# 🧩 AIR Diff — 論証構造の変化\n']
+          for fpath in changed:
+            base_content = subprocess.run(
+              ['git', 'show', f'{base_ref}:{fpath}'],
+              capture_output=True, text=True
+            ).stdout
+            if not base_content:
+              sections.append(f'### \`{fpath}\` — 新規ファイル\n')
+              continue
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', encoding='utf-8', delete=False) as f:
+              f.write(base_content)
+              tmp = Path(f.name)
+            base_air = parse_markdown_to_air(tmp)
+            head_air = parse_markdown_to_air(fpath) if Path(fpath).exists() else None
+            tmp.unlink()
+            if head_air:
+              diff = diff_air(base_air, head_air)
+              sections.append(f'### \`{fpath}\`\n\n{format_diff_as_markdown(diff)}\n')
+
+          Path('air_diff.md').write_text('\n'.join(sections))
+          print('✓ AIR diff complete')
+          "
+
+      - name: Post / update PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('air_diff.md', 'utf8');
+            const marker = '<!-- authorops:air-diff -->';
+            const full = marker + '\n' + body;
+            const {data: comments} = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body: full });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body: full });
+            }

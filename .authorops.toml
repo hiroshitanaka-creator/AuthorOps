@@ -1,0 +1,23 @@
+# AuthorOps 設定ファイル
+# tools/authorops/config.py によって読み込まれる
+
+# 論証解析・lint の対象パス（glob）
+include = ["src/**/*.md"]
+
+# 除外パス（human-only 領域など）
+exclude = [
+  "src/human-only/**",
+  "src/drafts/**",
+]
+
+# 人間固有の認知領域（LLM検査・自動整形の対象外）
+human_only_paths = ["src/human-only/"]
+
+# AI支援領域（全検査の対象）
+ai_assisted_paths = ["src/ai-assisted/", "src/"]
+
+# LLM検査の有効化（CIではデフォルトoff、make lint:logic:llm で手動実行）
+llm_lint_enabled = false
+
+# LLM検査に使用するモデル
+llm_model = "claude-haiku-4-5-20251001"

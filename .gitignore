@@ -1,7 +1,7 @@
 # Build outputs
 /book
-/docs
 
+# Generated data (strata, etc.)
 data/
 __pycache__/
 *.pyc

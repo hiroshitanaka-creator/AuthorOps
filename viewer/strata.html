@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AuthorOps Strata — 論証地層ビューア</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #0f1117; color: #e2e8f0; }
+
+    header {
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid #2d3748;
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; color: #90cdf4; }
+    header p { font-size: 0.85rem; color: #718096; }
+
+    #controls {
+      padding: 0.75rem 2rem;
+      border-bottom: 1px solid #2d3748;
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+      font-size: 0.8rem;
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    #main { display: flex; overflow: hidden; height: calc(100vh - 100px); }
+
+    #chart-area { flex: 1; overflow: auto; padding: 1rem 2rem; }
+    #detail-panel {
+      width: 320px;
+      min-width: 280px;
+      border-left: 1px solid #2d3748;
+      padding: 1rem;
+      overflow-y: auto;
+      font-size: 0.82rem;
+    }
+    #detail-panel h3 { color: #90cdf4; margin-bottom: 0.5rem; font-size: 0.9rem; }
+    #detail-panel .detail-row { margin: 0.4rem 0; }
+    #detail-panel .detail-label { color: #718096; font-size: 0.75rem; }
+    #detail-panel .detail-value { color: #e2e8f0; }
+
+    .layer-group { cursor: pointer; }
+    .layer-bar { rx: 3; transition: opacity 0.15s; }
+    .layer-bar:hover { opacity: 0.85; }
+    .layer-label { font-size: 11px; fill: #a0aec0; }
+    .layer-subject { font-size: 11px; fill: #e2e8f0; }
+    .axis line, .axis path { stroke: #2d3748; }
+    .axis text { fill: #718096; font-size: 10px; }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 60%;
+      gap: 0.5rem;
+      color: #4a5568;
+    }
+    .empty-state .icon { font-size: 3rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🗻 AuthorOps Strata</h1>
+    <p id="meta">地層ビューアを読み込み中...</p>
+  </header>
+  <div id="controls">
+    <div class="legend-item"><div class="legend-dot" style="background:#4299e1"></div>claim（主張）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#48bb78"></div>premise（前提）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f6ad55"></div>refutation（反証）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#9f7aea"></div>definition（定義）</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fc8181"></div>citation（引用）</div>
+  </div>
+  <div id="main">
+    <div id="chart-area"></div>
+    <div id="detail-panel">
+      <h3>詳細</h3>
+      <div id="detail-content" style="color:#4a5568">コミットをクリックすると詳細が表示されます</div>
+    </div>
+  </div>
+
+  <script>
+    const DATA_URL = "../data/strata.json";
+    const NODE_COLORS = {
+      claim: "#4299e1",
+      premise: "#48bb78",
+      refutation: "#f6ad55",
+      definition: "#9f7aea",
+      citation: "#fc8181",
+    };
+    const NODE_KINDS = Object.keys(NODE_COLORS);
+
+    async function loadData() {
+      try {
+        const res = await fetch(DATA_URL);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (e) {
+        // デモデータ（ファイル読み込み失敗時）
+        return {
+          generated: new Date().toISOString(),
+          total_commits: 3,
+          layers: [
+            {
+              short_hash: "abc1234", date: "2026-06-01",
+              subject: "feat(ch1): add intro", author: "Author",
+              files: [{ file: "src/chapter-01/01-intro.md", paragraphs: 4, chars: 300,
+                air_nodes: { claim: 1, premise: 1, refutation: 0, definition: 0, citation: 0 } }],
+              summary: { files_changed: 1, total_paragraphs: 4, total_chars: 300 },
+            },
+            {
+              short_hash: "def5678", date: "2026-06-05",
+              subject: "feat(ch1): expand argument", author: "Author",
+              files: [{ file: "src/chapter-01/01-intro.md", paragraphs: 7, chars: 580,
+                air_nodes: { claim: 2, premise: 3, refutation: 1, definition: 0, citation: 0 } }],
+              summary: { files_changed: 1, total_paragraphs: 7, total_chars: 580 },
+            },
+            {
+              short_hash: "ghi9012", date: "2026-06-10",
+              subject: "feat(ch1): add definitions", author: "Author",
+              files: [{ file: "src/chapter-01/01-intro.md", paragraphs: 10, chars: 820,
+                air_nodes: { claim: 2, premise: 4, refutation: 1, definition: 2, citation: 1 } }],
+              summary: { files_changed: 1, total_paragraphs: 10, total_chars: 820 },
+            },
+          ],
+        };
+      }
+    }
+
+    function renderChart(data) {
+      const layers = [...data.layers].reverse(); // 古い順に並べる
+      document.getElementById("meta").textContent =
+        `${data.total_commits} コミット | 生成: ${data.generated?.slice(0, 10) || "不明"}`;
+
+      const container = document.getElementById("chart-area");
+      const W = Math.max(container.clientWidth - 40, 600);
+      const ROW_H = 44;
+      const LABEL_W = 200;
+      const H = Math.max(layers.length * ROW_H + 80, 300);
+
+      // maxノード数（スケール用）
+      const maxNodes = d3.max(layers, l =>
+        d3.sum(l.files, f => d3.sum(NODE_KINDS, k => f.air_nodes?.[k] || 0))
+      ) || 1;
+
+      const xScale = d3.scaleLinear()
+        .domain([0, maxNodes])
+        .range([0, W - LABEL_W - 40]);
+
+      const svg = d3.select("#chart-area").append("svg")
+        .attr("width", W)
+        .attr("height", H);
+
+      // 軸
+      const xAxis = d3.axisTop(xScale).ticks(5).tickSize(-H + 40);
+      svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(${LABEL_W + 20}, 40)`)
+        .call(xAxis);
+
+      const groups = svg.selectAll(".layer-group")
+        .data(layers)
+        .enter()
+        .append("g")
+        .attr("class", "layer-group")
+        .attr("transform", (_, i) => `translate(0, ${40 + i * ROW_H})`)
+        .on("click", (_, d) => showDetail(d));
+
+      // ラベル
+      groups.append("text")
+        .attr("class", "layer-label")
+        .attr("x", 8)
+        .attr("y", ROW_H / 2 - 4)
+        .text(d => d.date);
+
+      groups.append("text")
+        .attr("class", "layer-subject")
+        .attr("x", 8)
+        .attr("y", ROW_H / 2 + 10)
+        .text(d => d.subject?.slice(0, 30) + (d.subject?.length > 30 ? "…" : ""));
+
+      // スタックバー
+      groups.each(function(d) {
+        const g = d3.select(this);
+        const totalNodes = d.files.reduce((acc, f) =>
+          NODE_KINDS.reduce((a, k) => ({ ...a, [k]: (a[k] || 0) + (f.air_nodes?.[k] || 0) }), acc), {}
+        );
+        let x = LABEL_W + 20;
+        for (const kind of NODE_KINDS) {
+          const count = totalNodes[kind] || 0;
+          if (count === 0) continue;
+          const w = xScale(count);
+          g.append("rect")
+            .attr("class", "layer-bar")
+            .attr("x", x)
+            .attr("y", ROW_H / 2 - 10)
+            .attr("width", Math.max(w, 2))
+            .attr("height", 20)
+            .attr("fill", NODE_COLORS[kind])
+            .attr("opacity", 0.8)
+            .append("title")
+            .text(`${kind}: ${count}`);
+          x += Math.max(w, 2);
+        }
+        // 段落数
+        g.append("text")
+          .attr("x", x + 6)
+          .attr("y", ROW_H / 2 + 4)
+          .attr("fill", "#4a5568")
+          .attr("font-size", "10px")
+          .text(`¶${d.summary?.total_paragraphs || 0}`);
+      });
+    }
+
+    function showDetail(d) {
+      const panel = document.getElementById("detail-content");
+      const nodes = d.files.reduce((acc, f) =>
+        NODE_KINDS.reduce((a, k) => ({ ...a, [k]: (a[k] || 0) + (f.air_nodes?.[k] || 0) }), acc), {}
+      );
+      panel.innerHTML = `
+        <div class="detail-row"><span class="detail-label">コミット</span><br><span class="detail-value" style="font-family:monospace">${d.hash || d.short_hash}</span></div>
+        <div class="detail-row"><span class="detail-label">日付</span><br><span class="detail-value">${d.date}</span></div>
+        <div class="detail-row"><span class="detail-label">コミットメッセージ</span><br><span class="detail-value">${d.subject || ""}</span></div>
+        <div class="detail-row"><span class="detail-label">著者</span><br><span class="detail-value">${d.author || ""}</span></div>
+        <hr style="border-color:#2d3748;margin:0.75rem 0">
+        <div class="detail-row"><span class="detail-label">論証ノード</span></div>
+        ${NODE_KINDS.map(k => `<div class="detail-row" style="display:flex;justify-content:space-between"><span style="color:${NODE_COLORS[k]}">${k}</span><span>${nodes[k] || 0}</span></div>`).join("")}
+        <hr style="border-color:#2d3748;margin:0.75rem 0">
+        <div class="detail-row"><span class="detail-label">変更ファイル</span></div>
+        ${(d.files || []).map(f => `<div class="detail-row" style="word-break:break-all;color:#90cdf4;font-size:0.75rem">${f.file}</div><div class="detail-row" style="font-size:0.75rem;color:#718096">¶${f.paragraphs} | ${f.chars}字</div>`).join("")}
+      `;
+    }
+
+    loadData().then(data => {
+      if (!data.layers || data.layers.length === 0) {
+        document.getElementById("chart-area").innerHTML = `
+          <div class="empty-state">
+            <div class="icon">🌱</div>
+            <div>まだ地層データがありません</div>
+            <div style="font-size:0.8rem;color:#4a5568">src/**/*.md を変更してコミットすると地層が積み重なります</div>
+          </div>`;
+        return;
+      }
+      renderChart(data);
+    }).catch(err => {
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
